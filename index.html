@@ -37,7 +37,9 @@ deleted guide should stop appearing in search.</p>
 connector reads Elasticsearch with an API key, selects documents, and synchronizes
 them into Cognee. The implementation is available on the
 <a href="https://github.com/aryagupta-tech/cognee-community/tree/feat/elasticsearch-connector/packages/connector/elasticsearch">contribution branch</a>.
-The upstream pull request is awaiting contributor review and has not been opened.</p>
+The contributor has reviewed the prepared contribution and authorized submission.
+The upstream contribution is
+<a href="https://github.com/topoteretes/cognee-community/pull/302">cognee-community PR #302</a>.</p>
 <h2>The onboarding scenario</h2>
 <p>Start with a guide that says: “Request VPN access through the helpdesk.” Later, the
 team switches to an identity portal. A useful assistant should retrieve the revised
@@ -179,11 +181,14 @@ are logged and retried on a later sync.</p>
 <p>The suite includes offline lifecycle tests, live Elasticsearch tests with 10,017
 documents across two shards, and real Cognee storage/recovery tests. Generated
 sequences compare sync output with an independent upstream-state oracle.</p>
-<p>The final combined run passed <strong>182 tests</strong>, plus <strong>200 generated lifecycle
+<p>The final combined run passed <strong>183 tests</strong>, plus <strong>200 generated lifecycle
 sequences</strong>, with <strong>100% connector statement and branch coverage</strong>. Ruff lint,
 formatting, dependency consistency and wheel packaging also passed. These results
 cover the documented test environment and scenarios; they do not establish
 correctness for every deployment.</p>
+<p>A further graph regression checks extracted concepts, relationships and entity
+vectors: a retired document's unique facts disappear, shared facts remain for the
+surviving document, and deleting the last document leaves all tested stores empty.</p>
 <p>For the combined example test, point these variables at a <strong>disposable</strong>,
 security-enabled local Elasticsearch server. Test fixtures create and remove
 uniquely named indices and API keys:</p>
@@ -201,10 +206,9 @@ or field selections create separate scopes. Production model quality and your
 server's TLS configuration need validation in your own environment.</p>
 <h2>Development disclosure</h2>
 <p>An AI assistant substantially prepared the implementation, tests and this article,
-and ran the automated validation. Arya's personal code review and validation remain
-pending. Maintainer assignment is recorded on the issue; Mergetober eligibility
-for this level of AI involvement has not been confirmed. The linked contribution
-is available for review before an upstream PR is opened.</p>
+and ran the automated validation. Arya reviewed the prepared contribution and
+authorized submission. Maintainer assignment is recorded on the issue;
+Mergetober eligibility for this level of AI involvement has not been confirmed.</p>
 </article></main>
 <footer>Published for the Mergetober contribution review · 8 October 2026<br>Local reproducible demo · AI assistance disclosed in the article</footer>
 </body></html>

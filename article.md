@@ -12,7 +12,9 @@ This article walks through a local onboarding knowledge-base demonstration for
 connector reads Elasticsearch with an API key, selects documents, and synchronizes
 them into Cognee. The implementation is available on the
 [contribution branch](https://github.com/aryagupta-tech/cognee-community/tree/feat/elasticsearch-connector/packages/connector/elasticsearch).
-The upstream pull request is awaiting contributor review and has not been opened.
+The contributor has reviewed the prepared contribution and authorized submission.
+The upstream contribution is
+[cognee-community PR #302](https://github.com/topoteretes/cognee-community/pull/302).
 
 ## The onboarding scenario
 
@@ -168,11 +170,15 @@ The suite includes offline lifecycle tests, live Elasticsearch tests with 10,017
 documents across two shards, and real Cognee storage/recovery tests. Generated
 sequences compare sync output with an independent upstream-state oracle.
 
-The final combined run passed **182 tests**, plus **200 generated lifecycle
+The final combined run passed **183 tests**, plus **200 generated lifecycle
 sequences**, with **100% connector statement and branch coverage**. Ruff lint,
 formatting, dependency consistency and wheel packaging also passed. These results
 cover the documented test environment and scenarios; they do not establish
 correctness for every deployment.
+
+A further graph regression checks extracted concepts, relationships and entity
+vectors: a retired document's unique facts disappear, shared facts remain for the
+surviving document, and deleting the last document leaves all tested stores empty.
 
 For the combined example test, point these variables at a **disposable**,
 security-enabled local Elasticsearch server. Test fixtures create and remove
@@ -197,7 +203,6 @@ server's TLS configuration need validation in your own environment.
 ## Development disclosure
 
 An AI assistant substantially prepared the implementation, tests and this article,
-and ran the automated validation. Arya's personal code review and validation remain
-pending. Maintainer assignment is recorded on the issue; Mergetober eligibility
-for this level of AI involvement has not been confirmed. The linked contribution
-is available for review before an upstream PR is opened.
+and ran the automated validation. Arya reviewed the prepared contribution and
+authorized submission. Maintainer assignment is recorded on the issue;
+Mergetober eligibility for this level of AI involvement has not been confirmed.
