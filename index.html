@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keeping Elasticsearch in sync with Cognee · Arya Gupta</title>
+<meta name="description" content="A reproducible onboarding knowledge-base demo: Elasticsearch API keys, incremental Cognee sync, and forget-on-delete.">
+<link rel="canonical" href="https://aryagupta-tech.github.io/cognee-community/">
+<style>
+:root { color-scheme: light; --ink: #1b2925; --muted: #58645f; --line: #d8ded9; --accent: #17664c; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #faf9f5; color: var(--ink); font: 18px/1.75 Georgia, 'Times New Roman', serif; }
+nav { max-width: 1120px; margin: auto; padding: 26px 32px; border-bottom: 1px solid var(--line); display: flex; gap: 24px; justify-content: space-between; font: 14px/1.5 system-ui, sans-serif; }
+nav a { color: var(--ink); text-decoration: none; }
+main { max-width: 820px; margin: 64px auto 90px; padding: 0 32px; }
+.eyebrow { font: 12px/1.5 system-ui, sans-serif; text-transform: uppercase; letter-spacing: .13em; color: var(--accent); }
+h1 { font-size: clamp(34px, 5vw, 52px); line-height: 1.13; letter-spacing: -.025em; margin: 22px 0 22px; font-weight: 500; }
+h2 { font-size: 29px; line-height: 1.3; margin: 46px 0 14px; font-weight: 500; }
+p { margin: 18px 0; }
+h1 + p { color: var(--muted); font: 13px/1.6 system-ui, sans-serif; padding-bottom: 25px; border-bottom: 1px solid var(--line); }
+a { color: var(--accent); text-underline-offset: 3px; overflow-wrap: anywhere; }
+code { font: .82em/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #edf0eb; padding: 2px 4px; border-radius: 4px; }
+pre { margin: 26px 0; padding: 20px; border: 1px solid var(--line); background: #edf0eb; border-radius: 8px; overflow: auto; }
+pre code { background: transparent; padding: 0; font-size: 13px; display: block; }
+table { border-collapse: collapse; font: 14px/1.65 system-ui, sans-serif; width: 100%; margin: 26px 0; }
+th, td { border-bottom: 1px solid var(--line); padding: 14px 12px; text-align: left; vertical-align: top; }
+th { background: #edf0eb; font-weight: 600; }
+footer { border-top: 1px solid var(--line); padding: 28px 32px; color: var(--muted); text-align: center; font: 13px/1.65 system-ui, sans-serif; }
+@media (max-width: 600px) { body { font-size: 17px; } nav { padding: 20px; gap: 12px; flex-wrap: wrap; } main { margin: 36px auto 60px; padding: 0 20px; } h2 { font-size: 26px; } pre { padding: 14px; } th, td { padding: 10px 7px; font-size: 12px; } }
+</style></head><body>
+<nav aria-label="Main"><a href="https://github.com/aryagupta-tech">Arya Gupta / Build notes</a><a href="https://github.com/topoteretes/cognee/issues/4770">Cognee issue #4770 ↗</a></nav>
+<main><div class="eyebrow">Open source · Integration walkthrough</div><article><h1>Keeping an Elasticsearch knowledge base in sync with Cognee</h1>
+<p>By Arya Gupta · 8 October 2026 · Mergetober integration demo</p>
+<p>A team can keep onboarding guides and operational runbooks in Elasticsearch while
+using Cognee to make those documents available to an assistant. The difficult part
+is keeping memory current: an edited guide should replace its old content, and a
+deleted guide should stop appearing in search.</p>
+<p>This article walks through a local onboarding knowledge-base demonstration for
+<a href="https://github.com/topoteretes/cognee/issues/4770">Cognee issue #4770</a>. The new
+connector reads Elasticsearch with an API key, selects documents, and synchronizes
+them into Cognee. The implementation is available on the
+<a href="https://github.com/aryagupta-tech/cognee-community/tree/feat/elasticsearch-connector/packages/connector/elasticsearch">contribution branch</a>.
+The upstream pull request is awaiting contributor review and has not been opened.</p>
+<h2>The onboarding scenario</h2>
+<p>Start with a guide that says: “Request VPN access through the helpdesk.” Later, the
+team switches to an identity portal. A useful assistant should retrieve the revised
+instructions. If the guide is retired entirely, its old instructions should leave
+Cognee's memory too.</p>
+<p>The local demonstration runs a security-enabled Elasticsearch 8.17.10 instance,
+an index-scoped API key, Cognee 1.6.3, and real SQLite, Ladybug graph and LanceDB
+vector storage. Model and embedding calls use deterministic test doubles. That
+makes the synchronization checks reproducible; evaluating natural-language answers
+with a production model provider is a separate step.</p>
+<h2>Set up the source</h2>
+<p>Use Python 3.11–3.13 and an Elasticsearch 8.x server. Clone the contribution and
+install its connector package:</p>
+<pre><code class="language-sh">git clone --branch feat/elasticsearch-connector https://github.com/aryagupta-tech/cognee-community.git
+cd cognee-community/packages/connector/elasticsearch
+python -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+</code></pre>
+<p>The selected index needs <code>_source</code> enabled and an <code>updated_at</code> field mapped as
+<code>date</code> or <code>date_nanos</code> with doc values. Each document needs one update date. A
+minimal guide has this shape:</p>
+<pre><code class="language-json">{
+  &quot;title&quot;: &quot;Team onboarding&quot;,
+  &quot;body&quot;: &quot;Request VPN access through the helpdesk.&quot;,
+  &quot;updated_at&quot;: &quot;2026-10-08T09:00:00Z&quot;,
+  &quot;published&quot;: true
+}
+</code></pre>
+<p>Create an API key with <code>read</code> and <code>view_index_metadata</code> on all selected indices.
+The metadata privilege lets the connector recognize an index recreated under the
+same name. The ingestion key needs no write or cluster privileges. Use the
+base64 <code>encoded</code> key from Elasticsearch's API-key response, and keep its document
+and field permissions stable between syncs.</p>
+<pre><code class="language-sh">export ELASTICSEARCH_URL='https://your-elasticsearch:9200'
+export ELASTICSEARCH_API_KEY='your-encoded-key'
+export ELASTICSEARCH_INDEX='knowledge-*'
+export ELASTICSEARCH_SOURCE_ID='knowledge-reader'
+</code></pre>
+<p>Configure Cognee's LLM and embedding providers for normal usage. For a private
+Elasticsearch certificate authority, the example accepts <code>ELASTICSEARCH_CA_CERTS</code>;
+certificate verification remains enabled. Detailed index mappings, API-key setup
+and test commands are in the
+<a href="https://github.com/aryagupta-tech/cognee-community/blob/feat/elasticsearch-connector/packages/connector/elasticsearch/README.md">package README</a>.</p>
+<h2>Ingest only the knowledge you want</h2>
+<p>The source accepts an index or alias, an Elasticsearch query clause, and selected
+JSON fields. This example includes published documents and leaves other fields
+out of Cognee memory:</p>
+<pre><code class="language-python">import asyncio
+
+import cognee
+from cognee_community_connector_elasticsearch import elasticsearch_source
+
+
+async def main():
+    source = elasticsearch_source(
+        source_id=&quot;knowledge-reader&quot;,
+        index=&quot;knowledge-*&quot;,
+        query={&quot;term&quot;: {&quot;published&quot;: True}},
+        fields=[&quot;title&quot;, &quot;body&quot;, &quot;updated_at&quot;],
+    )
+    await cognee.remember(
+        source,
+        dataset_name=&quot;onboarding&quot;,
+        primary_key=&quot;id&quot;,
+        write_disposition=&quot;merge&quot;,
+        max_rows_per_table=0,
+    )
+    answers = await cognee.recall(
+        &quot;How do I request VPN access?&quot;, datasets=[&quot;onboarding&quot;]
+    )
+    for answer in answers:
+        print(answer)
+
+
+asyncio.run(main())
+</code></pre>
+<p>Run the same source configuration and dataset on each sync. <code>merge</code> retains
+unchanged staged documents while applying updates and deletion tombstones. Stable
+IDs include the source configuration, concrete index and Elasticsearch document
+ID, so identical IDs in different indices remain distinct.</p>
+<p>The package also ships a runnable environment-based example:</p>
+<pre><code class="language-sh">export COGNEE_DATASET='onboarding'
+export COGNEE_QUESTION='How do I request VPN access?'
+python examples/remember_elasticsearch.py
+</code></pre>
+<p>That example selects all documents in the configured index. Use the source's
+<code>query</code> and <code>fields</code> arguments, as above, when you need narrower selection.</p>
+<h2>What changed during the verified demo</h2>
+<p>The automated example test executes the shipped example against a real
+Elasticsearch API-key connection. It uses Cognee's actual <code>recall</code> API with chunk
+retrieval selected for deterministic validation, rather than model-generated
+answers. It checks relational records, graph text and vector document chunks.</p>
+<table>
+<thead>
+<tr>
+<th>Source action</th>
+<th>Verified Cognee result</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Add the onboarding guide</td>
+<td>One document/chunk; recall output includes the helpdesk instructions.</td>
+</tr>
+<tr>
+<td>Sync again without an edit</td>
+<td>The original record ID remains; one document/chunk.</td>
+</tr>
+<tr>
+<td>Change the guide to the identity portal</td>
+<td>One document/chunk; graph text contains the new instructions and omits the helpdesk text.</td>
+</tr>
+<tr>
+<td>Delete the final guide and sync</td>
+<td>No document records or document chunks; the retired guide's text is absent from the graph.</td>
+</tr>
+</tbody>
+</table>
+<p>These are local validation results recorded by an AI assistant on 8 October 2026.
+They describe a reproducible onboarding use case with synthetic documents.</p>
+<h2>Why pagination and deletion need different checks</h2>
+<p>The connector opens a point-in-time view and pages with <code>search_after</code> on the
+update date plus Elasticsearch's <code>_shard_doc</code> tie-breaker. Each request carries
+the entire returned sort tuple, and the connector closes the PIT after the scan.
+This follows Elastic's
+<a href="https://www.elastic.co/docs/reference/elasticsearch/rest-apis/paginate-search-results">PIT pagination guidance</a>
+and supports result sets beyond the usual 10,000-hit offset limit.</p>
+<p>An update cursor cannot reveal a hard deletion. Each sync therefore scans the
+selected corpus's complete ID and revision inventory without document bodies.
+Only new or changed bodies are fetched. Content fingerprints avoid re-ingesting
+unchanged text; a successful full inventory identifies missing IDs for deletion.
+The metadata scan is O(N), even when the content delta is small.</p>
+<p>A failed request, partial shard result, missing index or incomplete content delta
+aborts before publishing changes. Cognee's existing document cleanup removes
+deleted records and their graph/vector artifacts. Cleanup failures in the core
+are logged and retried on a later sync.</p>
+<h2>Reproduce the checks</h2>
+<p>The suite includes offline lifecycle tests, live Elasticsearch tests with 10,017
+documents across two shards, and real Cognee storage/recovery tests. Generated
+sequences compare sync output with an independent upstream-state oracle.</p>
+<p>For the combined example test, point these variables at a <strong>disposable</strong>,
+security-enabled local Elasticsearch server. Test fixtures create and remove
+uniquely named indices and API keys:</p>
+<pre><code class="language-sh">export ES_TEST_URL='http://127.0.0.1:19200'
+export ES_TEST_PASSWORD='your-disposable-admin-password'
+pytest tests/test_cognee_sync.py::test_runnable_example_with_live_source_updates_and_deletion -q
+pytest tests -q --cov=cognee_community_connector_elasticsearch --cov-branch --hypothesis-show-statistics
+</code></pre>
+<p>The API key is generated at runtime and invalidated after the test. The admin
+password is used for fixture setup and cleanup, while the connector authenticates
+with the scoped reader key.</p>
+<p>In deployment, keep read permissions stable, serialize syncs for the same source
+and dataset, and retain both dlt state and its staging database. Different queries
+or field selections create separate scopes. Production model quality and your
+server's TLS configuration need validation in your own environment.</p>
+<h2>Development disclosure</h2>
+<p>An AI assistant substantially prepared the implementation, tests and this article,
+and ran the automated validation. Arya's personal code review and validation remain
+pending. Maintainer assignment is recorded on the issue; Mergetober eligibility
+for this level of AI involvement has not been confirmed. The linked contribution
+is available for review before an upstream PR is opened.</p>
+</article></main>
+<footer>Published for the Mergetober contribution review · 8 October 2026<br>Local reproducible demo · AI assistance disclosed in the article</footer>
+</body></html>
