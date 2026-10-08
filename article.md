@@ -168,6 +168,12 @@ The suite includes offline lifecycle tests, live Elasticsearch tests with 10,017
 documents across two shards, and real Cognee storage/recovery tests. Generated
 sequences compare sync output with an independent upstream-state oracle.
 
+The final combined run passed **182 tests**, plus **200 generated lifecycle
+sequences**, with **100% connector statement and branch coverage**. Ruff lint,
+formatting, dependency consistency and wheel packaging also passed. These results
+cover the documented test environment and scenarios; they do not establish
+correctness for every deployment.
+
 For the combined example test, point these variables at a **disposable**,
 security-enabled local Elasticsearch server. Test fixtures create and remove
 uniquely named indices and API keys:
